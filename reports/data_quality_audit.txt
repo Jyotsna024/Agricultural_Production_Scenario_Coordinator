@@ -1,20 +1,80 @@
 PS 137 – Agricultural Production Scenario Coordinator
 DATA QUALITY AUDIT REPORT
-Generated : PENDING – run preprocess_agriculture.py to populate this file
-===============================================================
+Generated : 2026-11-25 12:02:52
+=================================================================
 
-This file will be automatically generated when you run:
+1. DATASET SHAPE
+   Rows    : 72,036
+   Columns : 11
+   Columns : ['record_uid', 'state_code', 'state', 'district_code', 'district', 'year', 'crop', 'area_1000_ha', 'production_1000_t', 'yield_kg_per_ha', 'source']
 
-    python src/preprocessing/preprocess_agriculture.py
+2. MISSING VALUES
+   production_1000_t                   :   14,904  (20.69%)
+   yield_kg_per_ha                     :   14,904  (20.69%)
 
-It will contain:
-  1. Dataset shape
-  2. Missing values per column
-  3. Exact and composite-key duplicates
-  4. Negative value counts
-  5. Zero value counts
-  6. High yield records
-  7. Year range
-  8. Unique state / district / crop counts
-  9. Sample state names
-  10. Sample crop names
+3. DUPLICATE RECORDS
+   Exact duplicates            : 0
+   Composite-key duplicates    : 0
+
+4. NEGATIVE VALUES
+   area_1000_ha                        :        0
+   production_1000_t                   :        0
+   yield_kg_per_ha                     :        0
+
+5. ZERO VALUES
+   area_1000_ha                        :   26,178
+   production_1000_t                   :   22,230
+   yield_kg_per_ha                     :   21,937
+
+6. HIGH YIELD RECORDS
+   Threshold                   : 15,000 kg/ha
+   Records above threshold     : 15
+   NOTE: These are flagged for investigation, not auto-removed.
+
+7. YEAR RANGE
+   Min year  : 2010
+   Max year  : 2017
+   Invalid   : 0
+
+8. UNIQUE VALUE COUNTS
+   States    : 20
+   Districts : 311
+   Crops     : 29
+   Years     : 8
+
+9. SAMPLE STATE NAMES (top 10)
+   Andhra Pradesh
+   Assam
+   Bihar
+   Chhattisgarh
+   Gujarat
+   Haryana
+   Himachal Pradesh
+   Jharkhand
+   Karnataka
+   Kerala
+
+10. SAMPLE CROP NAMES (top 20)
+   BARLEY
+   CASTOR
+   CHICKPEA
+   COTTON
+   FINGER MILLET
+   FODDER
+   FRUITS
+   FRUITS AND VEGETABLES
+   GROUNDNUT
+   KHARIF SORGHUM
+   LINSEED
+   MAIZE
+   MINOR PULSES
+   OILSEEDS
+   ONION
+   PEARL MILLET
+   PIGEONPEA
+   POTATOES
+   RABI SORGHUM
+   RAPESEED AND MUSTARD
+
+=================================================================
+END OF AUDIT REPORT

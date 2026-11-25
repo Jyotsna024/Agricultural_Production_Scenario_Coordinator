@@ -1,0 +1,86 @@
+PS 137 – Agricultural Production Scenario Coordinator
+MEMBER 2 – HISTORICAL INSIGHTS REPORT
+Generated : 2026-11-25 12:06:40
+=================================================================
+
+IMPORTANT DISCLAIMER
+  All observations below are based on HISTORICAL RECORDED DATA.
+  These are descriptive statistics and observed patterns.
+  They are NOT predictions, forecasts, or causal explanations.
+  Correlation observed in this data does not imply causation.
+
+=================================================================
+YEAR-WISE INSIGHTS
+=================================================================
+  Year with highest total production : 2013
+    Production : 392,632.51 thousand tonnes
+    Area       : 204,777.19 thousand hectares
+    Yield      : 1,917.36 kg/ha
+
+  Year with lowest total production  : 2015
+    Production : 332,467.13 thousand tonnes
+
+  Year with highest weighted yield   : 2017
+    Yield      : 2,177.51 kg/ha
+
+  Largest year-over-year increase : 2016
+    Change : +14.16%
+  Largest year-over-year decrease : 2014
+    Change : -8.78%
+
+=================================================================
+STATE-WISE INSIGHTS
+=================================================================
+  Top 5 states by total production (across all available years):
+    Uttar Pradesh                     526,366.84 000t  (17.9% of total)
+    Madhya Pradesh                    336,543.87 000t  (11.4% of total)
+    Rajasthan                         256,873.93 000t  (8.7% of total)
+    Maharashtra                       254,814.35 000t  (8.7% of total)
+    Punjab                            239,858.41 000t  (8.1% of total)
+
+  Highest weighted yield state (≥10 records):
+    Punjab : 4,204.74 kg/ha
+
+=================================================================
+CROP-WISE INSIGHTS
+=================================================================
+  Highest production crop (cumulative, all years):
+    Rice : 853,612.38 thousand tonnes
+    Share of total production : 29.0%
+
+  Top 5 crops by total production:
+    Rice                              853,612.38 000t  (29.0%)
+    Wheat                             795,465.17 000t  (27.0%)
+    Sugarcane                         285,369.99 000t  (9.7%)
+    Maize                             199,956.77 000t  (6.8%)
+    Oilseeds                          176,087.17 000t  (6.0%)
+
+  Highest weighted yield crop (≥5 records):
+    Sugarcane : 7,233.28 kg/ha
+
+=================================================================
+PRODUCTION CHANGE BY CROP
+=================================================================
+  Largest absolute production INCREASE:
+    Crop       : Rice
+    Change     : +20,019.38 thousand tonnes
+    % Change   : +21.2%
+
+  Largest absolute production DECREASE:
+    Crop       : Oilseeds
+    Change     : -28,116.17 thousand tonnes
+    % Change   : -86.1%
+
+=================================================================
+GENERAL NOTES
+=================================================================
+  - All production values are in THOUSAND TONNES (multiply by 1000 for tonnes).
+  - All area values are in THOUSAND HECTARES.
+  - Yield is in kg/ha (already a ratio; not scaled by thousands).
+  - Weighted yield = (Σ production × 1000) / Σ area, using 1000-unit values.
+  - Records with zero area are excluded from yield calculations.
+  - Some records have missing production values; these are excluded from
+    production totals but NOT from record counts.
+
+=================================================================
+END OF INSIGHTS REPORT

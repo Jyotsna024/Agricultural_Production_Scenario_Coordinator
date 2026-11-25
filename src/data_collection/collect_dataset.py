@@ -84,7 +84,7 @@ def download_dataset() -> pd.DataFrame:
 
     try:
         # load_dataset returns a DatasetDict; 'train' is the default split.
-        hf_dataset = load_dataset(DATASET_ID, trust_remote_code=True)
+        hf_dataset = load_dataset(DATASET_ID)
         print(f"Available splits : {list(hf_dataset.keys())}")
 
         # Use the first available split (usually 'train').

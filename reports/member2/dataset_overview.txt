@@ -1,0 +1,130 @@
+PS 137 – Agricultural Production Scenario Coordinator
+MEMBER 2 – DATASET OVERVIEW REPORT
+Generated : 2026-11-25 12:06:40
+=================================================================
+
+1. BASIC DIMENSIONS
+   Total records  : 72,036
+   Total columns  : 20
+   States         : 20
+   Districts      : 311
+   Crops          : 29
+   Year range     : 2010 – 2017
+   Years available: [2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017]
+
+2. DATA QUALITY
+   Exact duplicates         : 0
+   Composite key duplicates : 0
+
+3. MISSING VALUES
+   production_1000_t                        :   14,904  (20.69%)
+   yield_kg_per_ha                          :   14,904  (20.69%)
+   calculated_yield_kg_per_ha               :   36,482  (50.64%)
+
+4. NUMERIC COLUMN SUMMARY
+   area_1000_ha
+     Count   : 72,036
+     Min     : 0.0000
+     Max     : 1162.6600
+     Mean    : 23.8998
+     Median  : 0.4400
+     Missing : 0
+   production_1000_t
+     Count   : 57,132
+     Min     : 0.0000
+     Max     : 4305.5000
+     Mean    : 51.5259
+     Median  : 0.2400
+     Missing : 14904
+   yield_kg_per_ha
+     Count   : 57,132
+     Min     : 0.0000
+     Max     : 22062.3000
+     Mean    : 978.6867
+     Median  : 524.2500
+     Missing : 14904
+
+5. RECORD STATUS DISTRIBUTION
+   complete_positive                             :   31,355  (43.5%)
+   zero_activity                                 :   21,409  (29.7%)
+   missing_prod_yield_with_area                  :    9,518  (13.2%)
+   small_area_rounding                           :    4,694  (6.5%)
+   missing_prod_yield_zero_area                  :    4,600  (6.4%)
+   zero_prod_with_positive_area                  :      291  (0.4%)
+   unknown                                       :      169  (0.2%)
+
+6. UNIQUE STATE NAMES
+   Andhra Pradesh
+   Assam
+   Bihar
+   Chhattisgarh
+   Gujarat
+   Haryana
+   Himachal Pradesh
+   Jharkhand
+   Karnataka
+   Kerala
+   Madhya Pradesh
+   Maharashtra
+   Odisha
+   Punjab
+   Rajasthan
+   Tamil Nadu
+   Telangana
+   Uttar Pradesh
+   Uttarakhand
+   West Bengal
+
+7. UNIQUE CROP NAMES
+   Barley
+   Castor
+   Chickpea
+   Cotton
+   Finger Millet
+   Fodder
+   Fruits
+   Fruits And Vegetables
+   Groundnut
+   Kharif Sorghum
+   Linseed
+   Maize
+   Minor Pulses
+   Oilseeds
+   Onion
+   Pearl Millet
+   Pigeonpea
+   Potatoes
+   Rabi Sorghum
+   Rapeseed And Mustard
+   Rice
+   Safflower
+   Sesamum
+   Sorghum
+   Soyabean
+   Sugarcane
+   Sunflower
+   Vegetables
+   Wheat
+
+=================================================================
+END OF OVERVIEW REPORT
+
+COLUMN SCHEMA
+  Original columns (from Member 1):
+    state               – State name (raw)
+    district            – District name (raw)
+    year                – Calendar year (integer)
+    crop                – Crop name (raw)
+    area_1000_ha        – Area in thousand hectares
+    production_1000_t   – Production in thousand tonnes
+    yield_kg_per_ha     – Yield in kg/ha (original recorded value)
+  Derived columns (added by Member 1 preprocessing):
+    state_clean         – Title-cased, corrected state name
+    district_clean      – Title-cased district name
+    crop_clean          – Title-cased crop name
+    calculated_yield_kg_per_ha – Yield from formula
+    yield_discrepancy   – True if recorded vs calculated differ > 10 kg/ha
+    has_production_data – True if production_1000_t is not NaN
+    is_zero_activity    – True if area=0 AND production=0
+    is_small_area_rounding – True if 0 < area < 0.1
+    record_status       – Quality classification of each record

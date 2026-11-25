@@ -1,15 +1,35 @@
 PS 137 – Agricultural Production Scenario Coordinator
 CLEANING SUMMARY REPORT
-Generated : PENDING – run preprocess_agriculture.py to populate this file
-===============================================================
+Generated : 2026-11-25 12:02:53
+=================================================================
 
-This file will be automatically generated when you run:
+BEFORE CLEANING
+  Rows    : 72,036
+  Columns : 11
 
-    python src/preprocessing/preprocess_agriculture.py
+AFTER CLEANING
+  Rows    : 72,036
+  Columns : 20
 
-It will contain:
-  - Row counts before and after cleaning
-  - Changes made (what was removed and why)
-  - New columns added
-  - record_status breakdown
-  - Output file location
+CHANGES MADE
+  Rows removed (exact duplicates) : 0
+  Original columns                : preserved unchanged
+  New columns added               : state_clean, district_clean, crop_clean,
+                                    calculated_yield_kg_per_ha, yield_discrepancy,
+                                    has_production_data, is_zero_activity,
+                                    is_small_area_rounding, record_status
+
+RECORD STATUS BREAKDOWN
+  complete_positive                             :   31,355  (43.5%)
+  zero_activity                                 :   21,409  (29.7%)
+  missing_prod_yield_with_area                  :    9,518  (13.2%)
+  small_area_rounding                           :    4,694  (6.5%)
+  missing_prod_yield_zero_area                  :    4,600  (6.4%)
+  zero_prod_with_positive_area                  :      291  (0.4%)
+  unknown                                       :      169  (0.2%)
+
+OUTPUT FILE
+  C:\Users\Jyotsna\Desktop\PS137_Agricultural_Scenario_Coordinator\data\processed\cleaned_agriculture_dataset.csv
+
+=================================================================
+END OF CLEANING SUMMARY
