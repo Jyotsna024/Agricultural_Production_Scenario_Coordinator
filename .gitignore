@@ -1,0 +1,61 @@
+# ============================================================
+# PS 137 – Agricultural Production Scenario Coordinator
+# .gitignore
+# ============================================================
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment variables / secrets
+.env
+.env.*
+*.secret
+
+# Large data files (use Git LFS or document separately)
+data/raw/*.parquet
+data/processed/*.csv
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Pytest cache
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Build / distribution
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+~$*

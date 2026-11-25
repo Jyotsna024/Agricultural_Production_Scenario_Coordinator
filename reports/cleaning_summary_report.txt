@@ -1,0 +1,15 @@
+PS 137 – Agricultural Production Scenario Coordinator
+CLEANING SUMMARY REPORT
+Generated : PENDING – run preprocess_agriculture.py to populate this file
+===============================================================
+
+This file will be automatically generated when you run:
+
+    python src/preprocessing/preprocess_agriculture.py
+
+It will contain:
+  - Row counts before and after cleaning
+  - Changes made (what was removed and why)
+  - New columns added
+  - record_status breakdown
+  - Output file location

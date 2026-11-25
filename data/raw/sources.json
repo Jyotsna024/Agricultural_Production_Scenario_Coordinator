@@ -1,0 +1,30 @@
+{
+  "dataset_name": "India Public Agriculture Dataset",
+  "source": "Hugging Face",
+  "huggingface_id": "therajasekhar/india-public-agriculture",
+  "url": "https://huggingface.co/datasets/therajasekhar/india-public-agriculture",
+  "collection_date": "PENDING – run collect_dataset.py to populate",
+  "file_saved_as": "data/raw/crop_statistics.parquet",
+  "description": "Historical agricultural production records for India covering states, districts, crops, area, production, and yield.",
+  "expected_rows": 72036,
+  "expected_columns": 7,
+  "columns": [
+    "state",
+    "district",
+    "year",
+    "crop",
+    "area_1000_ha",
+    "production_1000_t",
+    "yield_kg_per_ha"
+  ],
+  "units": {
+    "area_1000_ha": "Thousand hectares",
+    "production_1000_t": "Thousand tonnes",
+    "yield_kg_per_ha": "Kilograms per hectare"
+  },
+  "geographic_coverage": "India (approx. 20 states, 311 districts)",
+  "year_range": "2010 to 2017",
+  "license": "Public – verify on Hugging Face dataset card",
+  "collected_by": "Member 1",
+  "project_id": "PS 137"
+}

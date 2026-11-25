@@ -1,0 +1,16 @@
+PS 137 – Agricultural Production Scenario Coordinator
+FINAL VALIDATION REPORT
+Generated : PENDING – run preprocess_agriculture.py to populate this file
+===============================================================
+
+This file will be automatically generated when you run:
+
+    python src/preprocessing/preprocess_agriculture.py
+
+It will contain:
+  - Validation check results (PASS / FAIL)
+  - Dataset statistics (rows, columns)
+  - Coverage (states, districts, crops, years)
+  - Missing values in cleaned CSV
+  - Record status breakdown
+  - Overall result

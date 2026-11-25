@@ -1,0 +1,20 @@
+PS 137 – Agricultural Production Scenario Coordinator
+DATA QUALITY AUDIT REPORT
+Generated : PENDING – run preprocess_agriculture.py to populate this file
+===============================================================
+
+This file will be automatically generated when you run:
+
+    python src/preprocessing/preprocess_agriculture.py
+
+It will contain:
+  1. Dataset shape
+  2. Missing values per column
+  3. Exact and composite-key duplicates
+  4. Negative value counts
+  5. Zero value counts
+  6. High yield records
+  7. Year range
+  8. Unique state / district / crop counts
+  9. Sample state names
+  10. Sample crop names
