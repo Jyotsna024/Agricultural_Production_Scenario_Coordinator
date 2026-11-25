@@ -1,14 +1,14 @@
 """
-Unit tests for output validation and Ollama LLM configuration.
+Unit tests for output validation and Gemini LLM configuration.
 """
 
 from unittest.mock import MagicMock, patch
 import pytest
 
 from src.agents.llm_config import (
-    check_ollama_connection,
     get_llm_settings,
     get_llm_status,
+    is_llm_available,
 )
 from src.validation.output_validator import validate_explanation_text, validate_output
 
@@ -77,21 +77,49 @@ class TestOutputValidator:
         assert len(res["warnings"]) > 0
 
 
-class TestOllamaConfig:
+class TestGeminiConfig:
+    """Tests for the Gemini LLM configuration (replaces old Ollama tests)."""
+
     def test_settings_defaults(self):
         settings = get_llm_settings()
-        assert settings["provider"] == "ollama"
-        assert "localhost" in settings["base_url"]
+        assert "provider" in settings
+        assert "model" in settings
         assert settings["temperature"] == 0.0
 
-    @patch("urllib.request.urlopen")
-    def test_check_ollama_mock(self, mock_urlopen):
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"models": [{"name": "llama3.2:latest"}]}'
-        mock_resp.__enter__.return_value = mock_resp
-        mock_urlopen.return_value = mock_resp
+    def test_settings_has_model_key(self):
+        settings = get_llm_settings()
+        assert isinstance(settings["model"], str)
+        assert len(settings["model"]) > 0
 
-        res = check_ollama_connection(base_url="http://localhost:11434", model="llama3.2")
-        assert res["reachable"] is True
-        assert res["model_installed"] is True
-        assert res["available_models"] == ["llama3.2:latest"]
+    def test_is_llm_available_with_key(self):
+        with patch("src.agents.llm_config._GEMINI_API_KEY", "fake_key_12345"):
+            assert is_llm_available() is True
+
+    def test_is_llm_available_without_key(self):
+        with patch("src.agents.llm_config._GEMINI_API_KEY", ""):
+            assert is_llm_available() is False
+
+    def test_get_llm_status_no_key(self):
+        with patch("src.agents.llm_config._GEMINI_API_KEY", ""):
+            status = get_llm_status()
+            assert status["available"] is False
+            assert "GEMINI_API_KEY" in status["error"]
+
+    def test_get_llm_status_with_valid_key_mocked(self):
+        """Mock a successful Gemini response to test status=available."""
+        import json
+        mock_response_body = json.dumps(
+            {"candidates": [{"content": {"parts": [{"text": "OK"}]}}]}
+        ).encode()
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = mock_response_body
+
+        with (
+            patch("src.agents.llm_config._GEMINI_API_KEY", "fake_key"),
+            patch("urllib.request.urlopen", return_value=mock_resp),
+        ):
+            status = get_llm_status()
+            assert status["available"] is True
+            assert status["error"] is None

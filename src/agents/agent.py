@@ -29,7 +29,7 @@ from src.validation.output_validator import validate_output
 class AgricultureAgent:
     """
     Coordinator agent for natural-language agricultural scenario analysis
-    powered by local Ollama + LangGraph + deterministic Python engines.
+    powered by Gemini REST API + LangGraph + deterministic Python engines.
     """
 
     def __init__(

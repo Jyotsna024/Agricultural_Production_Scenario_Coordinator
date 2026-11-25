@@ -3,13 +3,13 @@ PS 137 - Agricultural Production Scenario Coordinator
 ======================================================
 src/agents/scenario_graph.py
 LangGraph workflow orchestrating:
-  1. Natural-language understanding & structured extraction (local Ollama)
+  1. Natural-language understanding & structured extraction (Gemini REST API)
   2. Extraction & required-field validation
   3. Conditional routing:
        - clarification_needed / invalid -> return clarification or error
-       - historical_analysis -> Member 2 lookup -> Ollama explanation
+       - historical_analysis -> Member 2 lookup -> Gemini explanation
        - scenario_simulation / comparison -> Member 2 baseline -> Member 3 engine
-         -> output validation -> (optional comparison) -> Ollama explanation
+         -> output validation -> (optional comparison) -> Gemini explanation
   4. Final structured output assembly
 """
 
@@ -23,7 +23,7 @@ import pandas as pd
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
-from src.agents.llm_config import get_llm
+import src.agents.llm_config as llm_config
 from src.agents.prompts import (
     CLARIFICATION_SYSTEM_PROMPT,
     EXPLANATION_SYSTEM_PROMPT,
@@ -62,37 +62,123 @@ def _extract_json_from_text(raw_text: str) -> dict:
     return json.loads(text)
 
 
-def _invoke_extraction(llm: Any, user_request: str) -> ExtractionResult:
-    """
-    Use ChatOllama to extract structured ExtractionResult.
-    Tries structured output first, then falls back to JSON parsing for
-    broader compatibility across local Ollama models.
-    """
-    messages = [
-        SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
-        HumanMessage(content=format_extraction_prompt(user_request)),
-    ]
+def _rule_based_fallback_extraction(
+    user_request: str,
+    known_states: Optional[List[str]] = None,
+    known_crops: Optional[List[str]] = None,
+) -> dict:
+    """Deterministic regex fallback when Gemini is unavailable or rate-limited."""
+    text = user_request.strip()
+    lower = text.lower()
 
-    # Try structured output if supported
-    if hasattr(llm, "with_structured_output"):
-        try:
-            structured_llm = llm.with_structured_output(ExtractionResult)
-            res = structured_llm.invoke(messages)
-            if isinstance(res, ExtractionResult):
-                if not res.original_request:
-                    res.original_request = user_request
-                return res
-            if isinstance(res, dict):
-                res.setdefault("original_request", user_request)
-                return ExtractionResult.model_validate(res)
-        except Exception:
-            pass
+    found_state = None
+    for st_name in sorted(known_states or [], key=len, reverse=True):
+        if re.search(rf"\b{re.escape(st_name.lower())}\b", lower):
+            found_state = st_name
+            break
 
-    # Fallback: raw text -> JSON -> Pydantic validation
-    raw_msg = llm.invoke(messages)
-    raw_text = getattr(raw_msg, "content", str(raw_msg))
-    parsed = _extract_json_from_text(raw_text)
+    found_crop = None
+    for cr_name in sorted(known_crops or [], key=len, reverse=True):
+        if re.search(rf"\b{re.escape(cr_name.lower())}\b", lower):
+            found_crop = cr_name
+            break
+
+    year_match = re.search(r"\b(20\d{2}|19\d{2})\b", text)
+    found_year = int(year_match.group(1)) if year_match else None
+
+    def _extract_pct(keyword: str) -> float:
+        # e.g., "area increases by 10%", "yield decreases by 5%", "area +10%", "yield -5%"
+        m1 = re.search(
+            rf"{keyword}[^0-9+\-]*(increase[sd]?|expand[sd]?|rise[sd]?|grow[sn]?|up|\+)?\s*(decrease[sd]?|drop[sd]?|fall[sn]?|reduce[sd]?|decline[sd]?|down|-)?\s*(?:by\s+)?([+-]?\d+(?:\.\d+)?)\s*%",
+            lower,
+        )
+        if m1:
+            val = float(m1.group(3))
+            if m1.group(2) and val > 0:
+                val = -val
+            return val
+        return 0.0
+
+    area_pct = _extract_pct("area")
+    yield_pct = _extract_pct("yield")
+
+    if found_state and found_crop and (abs(area_pct) > 1e-9 or abs(yield_pct) > 1e-9):
+        return {
+            "intent": "scenario_simulation",
+            "scenarios": [
+                {
+                    "state": found_state,
+                    "district": None,
+                    "crop": found_crop,
+                    "year": found_year,
+                    "area_change_percent": area_pct,
+                    "yield_change_percent": yield_pct,
+                    "scenario_name": f"{found_crop} in {found_state}",
+                    "scenario_description": "Extracted via deterministic fallback",
+                }
+            ],
+            "needs_clarification": False,
+            "clarification_question": None,
+            "missing_fields": [],
+            "original_request": user_request,
+            "confidence": 0.7,
+            "historical_query": None,
+        }
+
+    return {
+        "intent": "clarification_needed",
+        "scenarios": [],
+        "needs_clarification": True,
+        "clarification_question": (
+            "I could not reach the AI service. "
+            "Please use the Manual Scenario mode in the sidebar."
+        ),
+        "missing_fields": [],
+        "original_request": user_request,
+        "confidence": 0.0,
+        "historical_query": None,
+    }
+
+
+def _invoke_extraction_gemini(
+    user_request: str,
+    known_states: Optional[List[str]] = None,
+    known_crops: Optional[List[str]] = None,
+) -> ExtractionResult:
+    """
+    Use Gemini REST API to extract structured ExtractionResult.
+    Falls back to deterministic rule-based extraction if Gemini is unavailable.
+    """
+    full_prompt = (
+        EXTRACTION_SYSTEM_PROMPT
+        + "\n\n"
+        + format_extraction_prompt(user_request)
+    )
+
+    try:
+        raw_text = llm_config.call_gemini(
+            prompt=full_prompt,
+            temperature=0.0,
+            max_output_tokens=1024,
+        )
+        parsed = _extract_json_from_text(raw_text)
+    except Exception:
+        parsed = _rule_based_fallback_extraction(
+            user_request, known_states=known_states, known_crops=known_crops
+        )
+
     parsed.setdefault("original_request", user_request)
+
+    # Robustness guard: if percentage changes are present, ensure correct intent
+    scenarios = parsed.get("scenarios") or []
+    has_changes = any(
+        abs(float(s.get("area_change_percent") or 0.0)) > 1e-9
+        or abs(float(s.get("yield_change_percent") or 0.0)) > 1e-9
+        for s in scenarios if isinstance(s, dict)
+    )
+    if has_changes and parsed.get("intent") == "historical_analysis":
+        parsed["intent"] = "comparison" if len(scenarios) > 1 else "scenario_simulation"
+
     return ExtractionResult.model_validate(parsed)
 
 
@@ -114,356 +200,386 @@ def _format_deterministic_explanation(
             errs = "; ".join(r.get("validation_errors", ["Unknown error"]))
             lines.append(f"- {name}: Could not be computed ({errs}).")
             continue
-        state = r.get("state")
-        district = r.get("district")
-        crop = r.get("crop")
-        year = r.get("year")
-        b_prod = r.get("baseline_production", 0.0)
-        n_prod = r.get("new_production", 0.0)
-        diff = r.get("production_change", 0.0)
-        pct = r.get("production_change_percent", 0.0)
-        lines.append(
-            f"- {name} ({crop} in {district}, {state}, {year}): "
-            f"Under {r.get('area_change_percent', 0.0):+.1f}% area change and "
-            f"{r.get('yield_change_percent', 0.0):+.1f}% yield change, "
-            f"hypothetical production moves from {b_prod:,.2f} to {n_prod:,.2f} "
-            f"thousand tonnes ({diff:+,.2f} thousand tonnes, {pct:+.2f}%)."
-        )
+        state = r.get("state", "")
+        crop = r.get("crop", "")
+        year = r.get("year", "")
+        ref_year = r.get("reference_year", year)
+        target_year = r.get("target_year", year)
+        b_prod = r.get("baseline_production")
+        n_prod = r.get("new_production")
+        pct = r.get("production_change_percent")
+        area_chg = r.get("area_change_percent", 0.0)
+        yield_chg = r.get("yield_change_percent", 0.0)
+        b_area = r.get("baseline_area")
+        n_area = r.get("new_area")
+        b_yield = r.get("baseline_yield")
+        n_yield = r.get("new_yield")
 
-    if comparison_result and comparison_result.get("best_production_scenario"):
-        best = comparison_result["best_production_scenario"]
-        lines.append(
-            f"\nHighest hypothetical production: {best.get('scenario_name')} "
-            f"({best.get('new_production', 0.0):,.2f} thousand tonnes)."
-        )
+        lines.append(f"**{name}** — {crop} in {state}")
+        if ref_year and target_year and ref_year != target_year:
+            lines.append(f"  Reference baseline year: {ref_year} (target year: {target_year})")
+        lines.append(f"  Baseline production: {b_prod:.2f} thousand tonnes" if b_prod is not None else "  Baseline: N/A")
+        lines.append(f"  Scenario production: {n_prod:.2f} thousand tonnes" if n_prod is not None else "  Scenario: N/A")
+        if pct is not None:
+            direction = "increase" if pct >= 0 else "decrease"
+            lines.append(f"  Change: {pct:+.2f}% ({direction})")
+        lines.append(f"  Assumptions: Area {area_chg:+.1f}%, Yield {yield_chg:+.1f}%")
+        lines.append("")
+
+    if comparison_result:
+        lines.append("**Scenario Comparison Summary**")
+        scenarios_cmp = comparison_result.get("scenarios", [])
+        if scenarios_cmp:
+            prods = [(s.get("scenario_name", "?"), s.get("new_production")) for s in scenarios_cmp if s.get("new_production") is not None]
+            if prods:
+                best = max(prods, key=lambda x: x[1])
+                lines.append(f"  Highest production: {best[0]} at {best[1]:.2f} thousand tonnes")
+
     return "\n".join(lines)
 
 
 def build_graph(
     df: Optional[pd.DataFrame] = None,
     llm_factory: Optional[Callable[[], Any]] = None,
-):
+) -> Any:
     """
-    Build and compile the LangGraph StateGraph for the Agricultural
-    Production Scenario Coordinator.
+    Build and compile the LangGraph state machine for the agricultural scenario agent.
 
     Parameters
     ----------
-    df          : optional pre-loaded cleaned DataFrame (loads default if None).
-    llm_factory : optional callable returning a LangChain chat model (defaults to get_llm).
+    df          : Pre-loaded cleaned DataFrame (loaded from CSV if None).
+    llm_factory : Unused (kept for API compatibility). Gemini REST API is used directly.
+
+    Returns
+    -------
+    CompiledGraph ready to .invoke(initial_state).
     """
-    _df = df if df is not None else load_cleaned_data()
-    _get_llm = llm_factory if llm_factory is not None else get_llm
-    _engine = AgriculturalScenarioEngine(_df)
+    # Load data once
+    if df is None:
+        df = load_cleaned_data()
 
-    # ── Node 1: Understand & Extract ──────────────────────────────────────────
+    engine = AgriculturalScenarioEngine(df)
+    known_states = sorted(df["state_clean"].dropna().unique().tolist()) if "state_clean" in df.columns else []
+    known_crops = sorted(df["crop_clean"].dropna().unique().tolist()) if "crop_clean" in df.columns else []
+
+    # ── Node 1: Understand and Extract ────────────────────────────────────────
     def understand_and_extract(state: AgentState) -> dict:
-        user_request = state.get("user_request", "").strip()
-        if not user_request:
-            return {
-                "intent": "clarification_needed",
-                "needs_clarification": True,
-                "clarification_question": "Please enter an agricultural scenario or historical question to analyse.",
-                "scenarios": [],
-                "workflow_stage": "understand_and_extract",
-            }
-
+        user_request = state.get("user_request", "")
         try:
-            llm = _get_llm()
-            extraction = _invoke_extraction(llm, user_request)
-            ext_dict = extraction.model_dump()
-            return {
-                "intent": extraction.intent,
-                "extraction_result": ext_dict,
-                "scenarios": ext_dict.get("scenarios", []),
-                "needs_clarification": extraction.needs_clarification,
-                "clarification_question": extraction.clarification_question,
-                "error": None,
-                "workflow_stage": "understand_and_extract",
-            }
+            extraction = _invoke_extraction_gemini(
+                user_request, known_states=known_states, known_crops=known_crops
+            )
         except Exception as exc:
             return {
                 "intent": "invalid",
-                "needs_clarification": False,
-                "error": f"LLM extraction failed: {exc}",
+                "extraction_result": None,
                 "scenarios": [],
+                "needs_clarification": False,
+                "clarification_question": None,
+                "error": f"Extraction failed: {exc}",
                 "workflow_stage": "understand_and_extract",
             }
-
-    # ── Node 2: Validate Extraction ───────────────────────────────────────────
-    def validate_extraction(state: AgentState) -> dict:
-        if state.get("error"):
-            return {"workflow_stage": "validate_extraction"}
-
-        intent = state.get("intent", "invalid")
-        scenarios = state.get("scenarios") or []
-        ext = state.get("extraction_result") or {}
-
-        if intent in ("clarification_needed", "invalid"):
-            question = state.get("clarification_question") or (
-                "Could you please specify the crop, state, year (2010-2017), "
-                "and any area or yield percentage changes you want to analyse?"
-            )
-            return {
-                "needs_clarification": intent == "clarification_needed",
-                "clarification_question": question if intent == "clarification_needed" else None,
-                "workflow_stage": "validate_extraction",
-            }
-
-        if intent in ("scenario_simulation", "comparison"):
-            if not scenarios:
-                return {
-                    "intent": "clarification_needed",
-                    "needs_clarification": True,
-                    "clarification_question": (
-                        "I understood this as a scenario request, but could not identify "
-                        "the crop, state, and year. Please specify e.g. 'Rice in Karnataka for 2017'."
-                    ),
-                    "workflow_stage": "validate_extraction",
-                }
-
-            missing: List[str] = []
-            for sc in scenarios:
-                if not sc.get("crop"):
-                    missing.append("crop")
-                if not sc.get("state"):
-                    missing.append("state")
-                if not sc.get("year"):
-                    missing.append("year (between 2010 and 2017)")
-
-            if missing:
-                unique_missing = list(dict.fromkeys(missing))
-                question = ext.get("clarification_question")
-                if not question:
-                    try:
-                        llm = _get_llm()
-                        msg = llm.invoke([
-                            SystemMessage(content=CLARIFICATION_SYSTEM_PROMPT),
-                            HumanMessage(
-                                content=(
-                                    f"User request: {state.get('user_request')}\n"
-                                    f"Missing fields: {', '.join(unique_missing)}"
-                                )
-                            ),
-                        ])
-                        question = getattr(msg, "content", str(msg)).strip()
-                    except Exception:
-                        question = (
-                            f"To run this scenario using historical records, could you please "
-                            f"specify the missing {', '.join(unique_missing)}?"
-                        )
-                return {
-                    "intent": "clarification_needed",
-                    "needs_clarification": True,
-                    "clarification_question": question,
-                    "workflow_stage": "validate_extraction",
-                }
-
         return {
-            "needs_clarification": False,
-            "workflow_stage": "validate_extraction",
+            "intent": extraction.intent,
+            "extraction_result": extraction.model_dump(),
+            "scenarios": [s.model_dump() for s in extraction.scenarios],
+            "needs_clarification": extraction.needs_clarification,
+            "clarification_question": extraction.clarification_question,
+            "workflow_stage": "understand_and_extract",
         }
 
-    # ── Conditional Router ────────────────────────────────────────────────────
+    # ── Node 2: Validate Extraction ────────────────────────────────────────────
+    def validate_extraction(state: AgentState) -> dict:
+        intent = state.get("intent", "invalid")
+        scenarios = state.get("scenarios", [])
+        needs_clarification = state.get("needs_clarification", False)
+
+        # If already flagged for clarification, pass through
+        if needs_clarification or intent in ("clarification_needed", "invalid"):
+            return {"workflow_stage": "validate_extraction"}
+
+        # For simulation/comparison: check required fields
+        if intent in ("scenario_simulation", "comparison"):
+            missing_global = []
+            for s in scenarios:
+                for field in ("state", "crop"):
+                    if not s.get(field):
+                        missing_global.append(field)
+            if missing_global:
+                q = f"To run a scenario, I need the following: {', '.join(set(missing_global))}. Please specify."
+                return {
+                    "intent": "clarification_needed",
+                    "needs_clarification": True,
+                    "clarification_question": q,
+                    "workflow_stage": "validate_extraction",
+                }
+
+        return {"workflow_stage": "validate_extraction"}
+
+    # ── Routing ────────────────────────────────────────────────────────────────
     def route_after_validation(state: AgentState) -> str:
-        if state.get("error"):
+        intent = state.get("intent", "invalid")
+        needs_clarification = state.get("needs_clarification", False)
+        if needs_clarification or intent in ("clarification_needed", "invalid"):
             return "handle_clarification_or_invalid"
-        if state.get("needs_clarification") or state.get("intent") in ("clarification_needed", "invalid"):
-            return "handle_clarification_or_invalid"
-        if state.get("intent") == "historical_analysis":
+        if intent == "historical_analysis":
             return "retrieve_historical_data"
         return "retrieve_baseline"
 
-    # ── Node 3a: Clarification / Invalid Handler ──────────────────────────────
+    # ── Node 3: Handle Clarification / Invalid ─────────────────────────────────
     def handle_clarification_or_invalid(state: AgentState) -> dict:
         intent = state.get("intent", "invalid")
-        question = state.get("clarification_question")
-        error = state.get("error")
-        message = error or question or (
-            "I can help with agricultural historical analysis and what-if crop "
-            "production scenarios (2010-2017). Please specify a crop, state, and year."
+        q = state.get("clarification_question") or (
+            "Your request could not be understood. Please describe the crop, state, "
+            "and the percentage change in area or yield you want to explore."
+            if intent == "invalid"
+            else "Could you provide more details about your farming scenario?"
         )
         final_output = {
-            "status": "clarification_needed" if state.get("needs_clarification") else "error",
+            "status": "clarification_needed" if intent == "clarification_needed" else "invalid",
             "intent": intent,
             "user_request": state.get("user_request", ""),
-            "needs_clarification": bool(state.get("needs_clarification")),
-            "clarification_question": question,
+            "needs_clarification": True,
+            "clarification_question": q,
             "extracted_assumptions": state.get("scenarios", []),
             "baseline_results": [],
             "simulation_results": [],
             "validation_results": [],
             "comparison_result": None,
             "historical_data": None,
-            "explanation": message,
-            "error": error,
+            "explanation": q,
+            "error": state.get("error"),
             "is_forecast": False,
         }
         return {
-            "explanation": message,
             "final_output": final_output,
-            "messages": [AIMessage(content=message)],
+            "messages": [AIMessage(content=q)],
             "workflow_stage": "handle_clarification_or_invalid",
         }
 
-    # ── Node 3b: Historical Analysis Retrieval ────────────────────────────────
+    # ── Node 4: Retrieve Historical Data ──────────────────────────────────────
     def retrieve_historical_data(state: AgentState) -> dict:
-        scenarios = state.get("scenarios") or []
-        first = scenarios[0] if scenarios else {}
-        st = first.get("state")
-        cr = first.get("crop")
-        yr = first.get("year")
-        dist = first.get("district")
+        extraction = state.get("extraction_result") or {}
+        scenarios = state.get("scenarios", [])
+        s = scenarios[0] if scenarios else {}
+
+        state_name = s.get("state")
+        crop_name = s.get("crop")
+        year = s.get("year")
 
         filtered = filter_data(
-            _df,
-            states=[st] if st else None,
-            districts=[dist] if dist else None,
-            crops=[cr] if cr else None,
-            years=[int(yr)] if yr else None,
+            df,
+            states=[state_name] if state_name else None,
+            crops=[crop_name] if crop_name else None,
+            years=[year] if year else None,
         )
-
         if filtered.empty:
-            hist_data = {
-                "found": False,
-                "filters": {"state": st, "district": dist, "crop": cr, "year": yr},
-                "record_count": 0,
-                "year_wise": [],
-                "state_wise": [],
-                "crop_wise": [],
-                "warning": "No historical records matched the specified filters.",
-            }
+            hist_data = {"found": False, "record_count": 0}
         else:
             hist_data = {
                 "found": True,
-                "filters": {"state": st, "district": dist, "crop": cr, "year": yr},
                 "record_count": int(len(filtered)),
-                "year_wise": analyse_year_wise(filtered).to_dict(orient="records"),
+                "year_wise": analyse_year_wise(filtered).head(10).to_dict(orient="records"),
                 "state_wise": analyse_state_wise(filtered).head(10).to_dict(orient="records"),
                 "crop_wise": analyse_crop_wise(filtered).head(10).to_dict(orient="records"),
-                "warning": None,
             }
-
         return {
             "baseline_results": [hist_data],
             "workflow_stage": "retrieve_historical_data",
         }
 
-    # ── Node 4b: Historical Explanation ───────────────────────────────────────
+    # ── Node 5: Generate Historical Explanation ────────────────────────────────
     def generate_historical_explanation(state: AgentState) -> dict:
-        hist_list = state.get("baseline_results") or [{}]
-        hist_data = hist_list[0]
-        user_query = state.get("user_request", "")
+        hist_list = state.get("baseline_results") or []
+        hist_data = hist_list[0] if hist_list else {}
+        user_request = state.get("user_request", "")
 
         if not hist_data.get("found"):
-            explanation = hist_data.get("warning") or "No matching historical records were found."
-            return {
-                "explanation": explanation,
-                "workflow_stage": "generate_historical_explanation",
-            }
-
-        try:
-            llm = _get_llm()
-            msg = llm.invoke([
-                SystemMessage(content=HISTORICAL_ANALYSIS_SYSTEM_PROMPT),
-                HumanMessage(content=format_historical_prompt(hist_data, user_query)),
-            ])
-            explanation = getattr(msg, "content", str(msg)).strip()
-        except Exception as exc:
-            yw = hist_data.get("year_wise", [])
-            explanation = (
-                f"Found {hist_data.get('record_count', 0)} historical records across "
-                f"{len(yw)} year(s). (Ollama explanation unavailable: {exc})"
-            )
+            explanation = "No historical data was found for your query. Please check the state, crop, and year."
+        else:
+            try:
+                explanation = llm_config.call_gemini(
+                    prompt=format_historical_prompt(hist_data, user_request),
+                    system_instruction=HISTORICAL_ANALYSIS_SYSTEM_PROMPT,
+                    temperature=0.2,
+                    max_output_tokens=1024,
+                )
+            except Exception:
+                # Deterministic fallback
+                recs = hist_data.get("year_wise", [])
+                if recs:
+                    latest = recs[-1]
+                    explanation = (
+                        f"Historical data found ({hist_data.get('record_count',0)} records). "
+                        f"Most recent year: {latest.get('year', 'N/A')}, "
+                        f"Production: {latest.get('production_1000_t', 'N/A'):.2f} thousand tonnes."
+                    )
+                else:
+                    explanation = "Historical data was found but could not be summarized."
 
         return {
             "explanation": explanation,
             "workflow_stage": "generate_historical_explanation",
         }
 
-    # ── Node 3c: Retrieve Baseline (Member 2) ─────────────────────────────────
+    # ── Node 6: Retrieve Baseline for Scenario ────────────────────────────────
     def retrieve_baseline(state: AgentState) -> dict:
-        scenarios = state.get("scenarios") or []
-        baselines: List[dict] = []
-        for sc in scenarios:
-            st = sc.get("state") or ""
-            dist = sc.get("district") or ""
-            cr = sc.get("crop") or ""
-            yr = int(sc.get("year") or 0)
-            if isinstance(dist, str) and dist.strip():
-                b = get_historical_baseline(_df, state=st, district=dist.strip(), crop=cr, year=yr)
+        scenarios = state.get("scenarios", [])
+        baseline_results = []
+
+        for s in scenarios:
+            state_name = s.get("state") or ""
+            crop_name = s.get("crop") or ""
+            year = s.get("year")
+            district = (s.get("district") or "").strip()
+
+            # Determine reference year: use the year from the scenario if within dataset range,
+            # otherwise use the nearest available year (max = 2017).
+            dataset_years = sorted(df["year"].unique().tolist()) if not df.empty else list(range(2010, 2018))
+            max_year = max(dataset_years)
+            min_year = min(dataset_years)
+
+            if year is not None and min_year <= year <= max_year:
+                reference_year = year
             else:
-                b = get_aggregated_baseline(_df, crop=cr, year=yr, state=st or None, district=None)
-            baselines.append(b)
+                reference_year = max_year  # default to latest
+
+            # Try district-level first if district is specified, otherwise state aggregate
+            if district:
+                baseline = get_historical_baseline(
+                    df,
+                    state=state_name,
+                    crop=crop_name,
+                    year=reference_year,
+                    district=district,
+                )
+            else:
+                baseline = {"found": False}
+
+            if not baseline.get("found"):
+                baseline = get_aggregated_baseline(
+                    df, state=state_name, crop=crop_name, year=reference_year
+                )
+
+            # Annotate with target vs reference year info
+            baseline["reference_year"] = reference_year
+            baseline["target_year"] = year if year is not None else reference_year
+            baseline["using_reference_year_note"] = (
+                f"Using {reference_year} as the reference baseline "
+                f"(target year {year} is {'beyond' if year and year > max_year else 'within'} the available dataset range 2010–2017)."
+                if year and year != reference_year
+                else f"Using {reference_year} data as baseline."
+            )
+
+            baseline_results.append(baseline)
+
         return {
-            "baseline_results": baselines,
+            "baseline_results": baseline_results,
             "workflow_stage": "retrieve_baseline",
         }
 
-    # ── Node 4c: Execute Deterministic Simulation (Member 3) ──────────────────
+    # ── Node 7: Execute Simulation ────────────────────────────────────────────
     def execute_simulation(state: AgentState) -> dict:
-        scenarios = state.get("scenarios") or []
-        sim_results = _engine.calculate_multiple_scenarios(scenarios)
+        scenarios = state.get("scenarios", [])
+        baseline_results = state.get("baseline_results", [])
+        sim_results = []
+
+        for i, s in enumerate(scenarios):
+            state_name = s.get("state") or ""
+            crop_name = s.get("crop") or ""
+            district = (s.get("district") or "").strip()
+            area_chg = float(s.get("area_change_percent") or 0.0)
+            yield_chg = float(s.get("yield_change_percent") or 0.0)
+            scenario_name = s.get("scenario_name", f"Scenario {i+1}")
+
+            baseline = baseline_results[i] if i < len(baseline_results) else {}
+            reference_year = baseline.get("reference_year")
+            target_year = baseline.get("target_year", reference_year)
+
+            res = engine.calculate_scenario(
+                state=state_name,
+                district=district,
+                crop=crop_name,
+                year=reference_year,
+                area_change_percent=area_chg,
+                yield_change_percent=yield_chg,
+                scenario_name=scenario_name,
+            )
+            # Inject any-year metadata
+            res["reference_year"] = reference_year
+            res["target_year"] = target_year
+            res["using_reference_year_note"] = baseline.get("using_reference_year_note", "")
+            res["is_forecast"] = False
+
+            sim_results.append(res)
+
         return {
             "simulation_results": sim_results,
             "workflow_stage": "execute_simulation",
         }
 
-    # ── Node 5c: Validate Results ─────────────────────────────────────────────
+    # ── Node 8: Validate Results ──────────────────────────────────────────────
     def validate_results(state: AgentState) -> dict:
-        sim_results = state.get("simulation_results") or []
-        val_results = [validate_output(res) for res in sim_results]
+        sim_results = state.get("simulation_results", [])
+        val_results = [validate_output(r) for r in sim_results]
         return {
             "validation_results": val_results,
             "workflow_stage": "validate_results",
         }
 
-    # ── Node 6c: Compare Scenarios (if >= 2) ──────────────────────────────────
+    # ── Node 9: Compare Scenarios ─────────────────────────────────────────────
     def compare_scenarios(state: AgentState) -> dict:
-        sim_results = state.get("simulation_results") or []
-        if len(sim_results) < 2:
-            return {
-                "comparison_result": None,
-                "workflow_stage": "compare_scenarios",
-            }
-        successful = [r for r in sim_results if r.get("success") and r.get("baseline")]
-        baseline = successful[0]["baseline"] if successful else {}
-        comp = ScenarioComparison(baseline_dict=baseline, scenarios=sim_results).compare()
+        sim_results = state.get("simulation_results", [])
+        intent = state.get("intent", "scenario_simulation")
+        comparison_result = None
+
+        if intent == "comparison" and len(sim_results) >= 2:
+            successful = [r for r in sim_results if r.get("success")]
+            if len(successful) >= 2:
+                try:
+                    cmp_obj = ScenarioComparison(successful)
+                    comparison_result = cmp_obj.compare()
+                except Exception:
+                    comparison_result = None
+
         return {
-            "comparison_result": comp,
+            "comparison_result": comparison_result,
             "workflow_stage": "compare_scenarios",
         }
 
-    # ── Node 7c: Generate Explanation (Ollama) ────────────────────────────────
+    # ── Node 10: Generate Explanation ─────────────────────────────────────────
     def generate_explanation(state: AgentState) -> dict:
-        sim_results = state.get("simulation_results") or []
-        assumptions = state.get("scenarios") or []
+        sim_results = state.get("simulation_results", [])
+        scenarios = state.get("scenarios", [])
+        baseline_results = state.get("baseline_results", [])
         comparison_result = state.get("comparison_result")
-        successful = [r for r in sim_results if r.get("success") and r.get("baseline")]
-        baseline = successful[0]["baseline"] if successful else {}
 
-        try:
-            llm = _get_llm()
-            msg = llm.invoke([
-                SystemMessage(content=EXPLANATION_SYSTEM_PROMPT),
-                HumanMessage(
-                    content=format_explanation_prompt(
+        baseline = baseline_results[0] if baseline_results else {}
+        assumptions = scenarios
+
+        if not llm_config.is_llm_available():
+            explanation = _format_deterministic_explanation(sim_results, comparison_result)
+        else:
+            try:
+                explanation = llm_config.call_gemini(
+                    prompt=format_explanation_prompt(
                         baseline=baseline,
                         results=sim_results,
                         assumptions=assumptions,
-                    )
-                ),
-            ])
-            explanation = getattr(msg, "content", str(msg)).strip()
-        except Exception:
-            explanation = _format_deterministic_explanation(sim_results, comparison_result)
+                    ),
+                    system_instruction=EXPLANATION_SYSTEM_PROMPT,
+                    temperature=0.3,
+                    max_output_tokens=1024,
+                )
+            except Exception:
+                explanation = _format_deterministic_explanation(sim_results, comparison_result)
 
         return {
             "explanation": explanation,
             "workflow_stage": "generate_explanation",
         }
 
-    # ── Node 8: Assemble Final Output ─────────────────────────────────────────
+    # ── Node 11: Assemble Final Output ─────────────────────────────────────────
     def assemble_output(state: AgentState) -> dict:
         intent = state.get("intent", "scenario_simulation")
         sim_results = state.get("simulation_results") or []
@@ -501,7 +617,7 @@ def build_graph(
             "workflow_stage": "assemble_output",
         }
 
-    # ── Wire Graph ────────────────────────────────────────────────────────────
+    # ── Wire Graph ─────────────────────────────────────────────────────────────
     graph = StateGraph(AgentState)
 
     graph.add_node("understand_and_extract", understand_and_extract)

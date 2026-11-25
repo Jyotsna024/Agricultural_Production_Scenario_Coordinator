@@ -2,11 +2,15 @@
 PS 137 - Agricultural Production Scenario Coordinator
 ======================================================
 app/app.py
-Streamlit Web Dashboard:
-  - Clean, prompt-based single-page user interface
-  - Powered by local Ollama + LangGraph + deterministic Python engines
-  - Instant manual scenario mode fallback when Ollama is unavailable
-  - Strict distinction: Hypothetical Scenarios vs Forecasts
+Streamlit Dashboard — "Your Farm, Your Scenario 🌾"
+Farmer-friendly interface powered by Gemini + LangGraph + deterministic Python engines.
+
+Features:
+  - Natural language prompt input (any hypothetical scenario)
+  - Any target year (not just 2010-2017)
+  - Manual scenario controls (always available)
+  - Clear distinction: Historical data vs Hypothetical scenarios
+  - Disclaimer: not a forecast
 """
 
 from __future__ import annotations
@@ -24,11 +28,7 @@ import pandas as pd
 import streamlit as st
 
 from src.agents.agent import AgricultureAgent
-from src.agents.llm_config import (
-    check_ollama_connection,
-    get_llm_settings,
-    get_llm_status,
-)
+from src.agents.llm_config import get_llm_settings, get_llm_status, is_llm_available
 from src.analysis.historical_analysis import load_cleaned_data
 from src.simulation.scenario_comparison import create_comparison_dataframe
 from src.visualization.scenario_charts import (
@@ -38,34 +38,34 @@ from src.visualization.scenario_charts import (
     plot_scenario_comparison,
 )
 
-# Page configuration
+# ── Page configuration ─────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Agricultural Production Scenario Coordinator",
+    page_title="Your Farm, Your Scenario 🌾",
     page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom styling
+# ── Custom styling ─────────────────────────────────────────────────────────────
 st.markdown(
     """
     <style>
     .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #1e3d59;
-        margin-bottom: 0.2rem;
+        font-size: 2.4rem;
+        font-weight: 800;
+        color: #1e5c1a;
+        margin-bottom: 0.1rem;
     }
     .sub-header {
-        font-size: 1.05rem;
+        font-size: 1.1rem;
         color: #555;
         margin-bottom: 1.2rem;
     }
     .metric-card {
         background-color: #f8f9fa;
-        border-radius: 8px;
+        border-radius: 10px;
         padding: 1rem;
-        border-left: 4px solid #2b5c8f;
+        border-left: 5px solid #2b8a3e;
     }
     .disclaimer-banner {
         background-color: #fff3cd;
@@ -77,250 +77,374 @@ st.markdown(
         margin-top: 1rem;
         margin-bottom: 1rem;
     }
+    .example-btn { margin: 0.2rem 0; }
+    .stTextArea textarea { font-size: 1.05rem; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
-@st.cache_resource
-def get_cached_agent() -> AgricultureAgent:
-    """Load and cache dataset and AgricultureAgent."""
-    df = load_cleaned_data()
-    return AgricultureAgent(df=df)
+# ── Session state initialisation ───────────────────────────────────────────────
+def _init_session():
+    defaults = {
+        "result": None,
+        "prompt_text": "",
+        "run_triggered": False,
+        "agent": None,
+        "df": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
 
-# Initialize session state
-if "last_result" not in st.session_state:
-    st.session_state.last_result = None
-if "prompt_input" not in st.session_state:
-    st.session_state.prompt_input = (
-        "What happens if rice cultivation area in Karnataka increases by 10% "
-        "and yield decreases by 5% in 2017?"
-    )
+_init_session()
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+
+# ── Load data once ─────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner="Loading agricultural dataset…")
+def _load_df():
+    return load_cleaned_data()
+
+
+@st.cache_resource(show_spinner="Initialising AI agent…")
+def _load_agent(_df):
+    return AgricultureAgent(df=_df)
+
+
+df = _load_df()
+agent = _load_agent(df)
+
+AVAILABLE_STATES = sorted(df["state_clean"].dropna().unique().tolist())
+AVAILABLE_CROPS = sorted(df["crop_clean"].dropna().unique().tolist())
+DATASET_YEARS = sorted(df["year"].dropna().unique().tolist())
+MIN_YEAR = min(DATASET_YEARS)
+MAX_YEAR = max(DATASET_YEARS)
+
+# ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ System Status")
-    status = get_llm_status()
-    settings = get_llm_settings()
+    st.header("⚙️ Settings")
 
-    if status["available"]:
-        st.success(f"🟢 **Ollama Connected**\n\nModel: `{status['model']}`")
+    # LLM status (instant local check — no API call on every rerun)
+    settings = get_llm_settings()
+    if is_llm_available():
+        st.success(f"✅ AI Ready: {settings['model']}")
+        if st.button("🔌 Test AI Connection", use_container_width=True):
+            with st.spinner("Testing Gemini API…"):
+                llm_status = get_llm_status()
+            if llm_status.get("available"):
+                st.success(f"✅ Connected to {llm_status['model']}")
+            else:
+                st.warning(f"⚠️ {llm_status.get('error', 'Connection failed')}")
     else:
-        st.warning(
-            f"🟡 **Ollama Offline / Standby**\n\n"
-            f"{status.get('error', 'Service not reached')}\n\n"
-            "Tip: Run `ollama serve` in a terminal."
+        st.error("❌ AI unavailable: GEMINI_API_KEY is not set.")
+        st.info(
+            "👉 Add your Gemini API key to `.env`:\n"
+            "```\nGEMINI_API_KEY=your_key_here\nGEMINI_MODEL=gemini-3.5-flash-lite\n```\n"
+            "Get a free key at https://aistudio.google.com"
         )
 
-    st.markdown("---")
-    st.subheader("Configuration")
-    st.caption(f"**Provider:** `{settings['provider']}`")
-    st.caption(f"**Base URL:** `{settings['base_url']}`")
-    st.caption(f"**Target Model:** `{settings['model']}`")
+    st.divider()
+    st.subheader("🔧 Manual Scenario Mode")
+    st.caption("Use these controls to run a scenario directly — no AI needed.")
 
-    if status.get("available_models"):
-        st.caption(f"**Installed Models:** {', '.join(status['available_models'])}")
+    manual_state = st.selectbox("State", AVAILABLE_STATES, index=AVAILABLE_STATES.index("Karnataka") if "Karnataka" in AVAILABLE_STATES else 0)
+    manual_crop = st.selectbox("Crop", AVAILABLE_CROPS, index=AVAILABLE_CROPS.index("Rice") if "Rice" in AVAILABLE_CROPS else 0)
+    manual_ref_year = st.selectbox(
+        "Reference Year (baseline)",
+        DATASET_YEARS,
+        index=len(DATASET_YEARS) - 1,
+        help=f"Historical baseline year. Data is available from {MIN_YEAR} to {MAX_YEAR}.",
+    )
+    manual_target_year = st.number_input(
+        "Target Year (your hypothetical year)",
+        min_value=2010,
+        max_value=2100,
+        value=2025,
+        step=1,
+        help="Any year — 2025, 2030, etc. The calculation uses the reference year's data as the baseline.",
+    )
+    manual_area_change = st.slider("Area change (%)", -80.0, 100.0, 0.0, 1.0)
+    manual_yield_change = st.slider("Yield change (%)", -80.0, 100.0, 0.0, 1.0)
 
-    st.markdown("---")
-    st.subheader("Manual Scenario Override")
-    with st.expander("Run Direct Deterministic Scenario"):
-        m_state = st.text_input("State", value="Karnataka")
-        m_crop = st.text_input("Crop", value="Rice")
-        m_year = st.number_input("Year", min_value=2010, max_value=2017, value=2017)
-        m_area_chg = st.slider("Area Change (%)", min_value=-50.0, max_value=50.0, value=10.0, step=1.0)
-        m_yield_chg = st.slider("Yield Change (%)", min_value=-50.0, max_value=50.0, value=-5.0, step=1.0)
-        m_district = st.text_input("District (optional, leave blank for state)", value="")
-        if st.button("Run Manual Calculation", use_container_width=True):
-            agent = get_cached_agent()
-            with st.spinner("Computing deterministic scenario..."):
-                st.session_state.last_result = agent.run_manual_scenario(
-                    state=m_state,
-                    crop=m_crop,
-                    year=int(m_year),
-                    area_change_percent=float(m_area_chg),
-                    yield_change_percent=float(m_yield_chg),
-                    district=m_district,
-                    scenario_name="Manual User Scenario",
-                )
-            st.rerun()
+    run_manual = st.button("▶ Run Manual Scenario", use_container_width=True)
 
-# ── Main Header ───────────────────────────────────────────────────────────────
-st.markdown('<div class="main-header">🌾 Agricultural Production Scenario Coordinator</div>', unsafe_allow_html=True)
+    st.divider()
+    st.caption(f"Dataset: {MIN_YEAR}–{MAX_YEAR} · {len(AVAILABLE_STATES)} states · {len(AVAILABLE_CROPS)} crops")
+
+# ── Main page header ───────────────────────────────────────────────────────────
+st.markdown('<div class="main-header">🌾 Your Farm, Your Scenario</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-header">'
-    'Problem Statement 137 • Natural-language what-if scenario exploration grounded in verified historical data (2010–2017)'
-    '</div>',
+    '<div class="sub-header">Understand how changes in your farming plans may affect crop production. '
+    'Describe any hypothetical situation and get a clear, plain-language analysis.</div>',
     unsafe_allow_html=True,
 )
 
-# ── Prompt Input Section ──────────────────────────────────────────────────────
-user_prompt = st.text_area(
-    "Ask an agricultural question or enter a what-if scenario assumption in plain English:",
-    value=st.session_state.prompt_input,
+# ── Example prompts ────────────────────────────────────────────────────────────
+st.markdown("**Try one of these examples:**")
+col1, col2 = st.columns(2)
+examples = [
+    "What happens if rice area in Karnataka increases by 10% and yield decreases by 5% in 2030?",
+    "If wheat cultivation in Punjab expands by 15% with no change in yield, what is the impact?",
+    "Show historical wheat production trends in Punjab from 2010 to 2017.",
+    "Compare: rice in Karnataka with area +10% vs area -10%, both in 2025.",
+]
+with col1:
+    if st.button(examples[0], use_container_width=True, key="ex0"):
+        st.session_state["prompt_text"] = examples[0]
+    if st.button(examples[2], use_container_width=True, key="ex2"):
+        st.session_state["prompt_text"] = examples[2]
+with col2:
+    if st.button(examples[1], use_container_width=True, key="ex1"):
+        st.session_state["prompt_text"] = examples[1]
+    if st.button(examples[3], use_container_width=True, key="ex3"):
+        st.session_state["prompt_text"] = examples[3]
+
+# ── Prompt input ───────────────────────────────────────────────────────────────
+prompt_text = st.text_area(
+    "📝 Tell us what you are planning for your farm:",
+    value=st.session_state.get("prompt_text", ""),
     height=100,
-    key="user_prompt_widget",
+    placeholder="e.g. What if rice area in Karnataka increases by 10% and yield decreases by 5% in 2030?",
+    key="main_prompt",
 )
 
-# Example Prompt Quick Buttons
-st.markdown("**Example prompts:**")
-col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+analyse_col, _ = st.columns([1, 3])
+with analyse_col:
+    run_ai = st.button("🔍 Analyse My Scenario", use_container_width=True, type="primary")
 
-if col_e1.button("🌾 Rice +10% Area, -5% Yield (Karnataka 2017)"):
-    st.session_state.prompt_input = "What happens if rice cultivation area in Karnataka increases by 10% and yield decreases by 5% in 2017?"
-    st.rerun()
 
-if col_e2.button("🌽 Maize Area Expansion +15% (2015)"):
-    st.session_state.prompt_input = "Suppose maize area in Karnataka increases by 15% in 2015 while yield remains unchanged. Calculate the new production."
-    st.rerun()
+# ── Run scenarios ──────────────────────────────────────────────────────────────
+result = None
 
-if col_e3.button("📊 Compare Drought vs Tech in Wheat (2016)"):
-    st.session_state.prompt_input = "Compare two scenarios for wheat in Madhya Pradesh in 2016: Scenario A with yield drop of 12%, and Scenario B with area growth of 8%."
-    st.rerun()
-
-if col_e4.button("📈 Historical Rice Production Trend"):
-    st.session_state.prompt_input = "Show me the historical production trend of rice in Karnataka from 2010 to 2017."
-    st.rerun()
-
-col_btn1, col_btn2 = st.columns([1, 5])
-with col_btn1:
-    analyse_clicked = st.button("🚀 Analyse", type="primary", use_container_width=True)
-
-# ── Execution Trigger ─────────────────────────────────────────────────────────
-if analyse_clicked and user_prompt.strip():
-    agent = get_cached_agent()
-    progress_bar = st.progress(10, text="Understanding prompt via local Ollama...")
-    try:
-        progress_bar.progress(35, text="Extracting parameters and validating fields...")
-        progress_bar.progress(60, text="Retrieving historical baseline & executing Python scenario engine...")
-        result = agent.run(user_prompt.strip())
-        progress_bar.progress(90, text="Validating outputs & generating explanation...")
-        st.session_state.last_result = result
-        progress_bar.progress(100, text="Completed!")
-        progress_bar.empty()
-    except Exception as exc:
-        progress_bar.empty()
-        st.error(f"Error during analysis: {exc}")
-
-# ── Results Display ───────────────────────────────────────────────────────────
-res = st.session_state.last_result
-
-if res:
-    st.markdown("---")
-    intent = res.get("intent", "scenario_simulation")
-    status = res.get("status", "unknown")
-
-    # Clarification Needed or Error
-    if res.get("needs_clarification"):
-        st.info(f"ℹ️ **Clarification Needed:**\n\n{res.get('clarification_question')}")
-
-    elif status == "failed" or res.get("error"):
-        st.error(f"⚠️ **Could not complete scenario:** {res.get('error') or res.get('explanation')}")
-
-    # Historical Analysis Display
-    elif intent == "historical_analysis":
-        st.subheader("📊 Historical Trend Analysis")
-        hist = res.get("historical_data") or {}
-        if hist.get("found"):
-            yw = hist.get("year_wise", [])
-            first_crop = (res.get("extracted_assumptions") or [{}])[0].get("crop", "Crop")
-            st.plotly_chart(plot_historical_trend(yw, crop=first_crop), use_container_width=True)
-
-            with st.expander("View Historical Data Table"):
-                st.dataframe(pd.DataFrame(yw), use_container_width=True)
-        else:
-            st.warning(hist.get("warning", "No matching historical records found."))
-
-        st.markdown("### 💡 Analysis Summary")
-        st.write(res.get("explanation", ""))
-
-    # Scenario Simulation / Comparison Display
+if run_ai and prompt_text.strip():
+    if not is_llm_available():
+        st.error(
+            "❌ Gemini API key is not configured. "
+            "Please add `GEMINI_API_KEY=your_key` to the `.env` file and restart the app. "
+            "Meanwhile, use **Manual Scenario Mode** in the sidebar."
+        )
     else:
-        sim_results = res.get("simulation_results") or []
-        successful_sims = [s for s in sim_results if s.get("success")]
+        with st.spinner("🤔 Analysing your scenario with AI…"):
+            try:
+                result = agent.run(prompt_text.strip())
+                st.session_state["result"] = result
+            except Exception as e:
+                st.error(f"❌ Error during analysis: {e}")
 
-        if successful_sims:
-            # Highlight Primary Scenario Metrics
-            primary = successful_sims[0]
-            b_prod = primary.get("baseline_production") or 0.0
-            n_prod = primary.get("new_production") or 0.0
-            diff = primary.get("production_change") or 0.0
-            pct = primary.get("production_change_percent") or 0.0
-            crop_name = primary.get("crop") or "Crop"
-            state_name = primary.get("state") or "Region"
-            year_val = primary.get("year") or ""
-
-            st.markdown(f"### 🎯 Results for **{crop_name}** in **{state_name}** ({year_val})")
-
-            # 4 Metric Cards
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Historical Baseline Production", f"{b_prod:,.2f} kt", help="Recorded in 1000 metric tonnes")
-            m2.metric("Hypothetical Scenario Production", f"{n_prod:,.2f} kt", delta=f"{diff:+,.2f} kt")
-            m3.metric("Absolute Difference", f"{diff:+,.2f} kt")
-            m4.metric("Percentage Change", f"{pct:+.2f}%")
-
-            # Mandatory Disclaimer Banner
-            st.markdown(
-                '<div class="disclaimer-banner">'
-                '⚠️ <strong>Important:</strong> This is a <strong>hypothetical what-if scenario</strong> '
-                'based on arithmetic simulation of user assumptions, <strong>NOT a future forecast or prediction</strong>.'
-                '</div>',
-                unsafe_allow_html=True,
+elif run_manual:
+    with st.spinner("⚙️ Running manual scenario…"):
+        try:
+            result = agent.run_manual_scenario(
+                state=manual_state,
+                crop=manual_crop,
+                year=manual_ref_year,
+                area_change_percent=manual_area_change,
+                yield_change_percent=manual_yield_change,
+                scenario_name=f"{manual_crop} in {manual_state} ({manual_target_year})",
             )
-
-            # Visualizations
-            c_chart1, c_chart2 = st.columns(2)
-            with c_chart1:
-                st.plotly_chart(
-                    plot_baseline_vs_scenario(
-                        baseline_prod=b_prod,
-                        scenario_prod=n_prod,
-                        crop=crop_name,
-                    ),
-                    use_container_width=True,
+            # Inject target year info
+            for r in result.get("simulation_results", []):
+                r["target_year"] = manual_target_year
+                r["reference_year"] = manual_ref_year
+                r["using_reference_year_note"] = (
+                    f"Using {manual_ref_year} data as baseline for target year {manual_target_year}."
                 )
-            with c_chart2:
-                st.plotly_chart(
-                    plot_area_yield_comparison(
-                        baseline_area=primary.get("baseline_area") or 0.0,
-                        new_area=primary.get("new_area") or 0.0,
-                        baseline_yield=primary.get("baseline_yield") or 0.0,
-                        new_yield=primary.get("new_yield") or 0.0,
-                        crop=crop_name,
-                    ),
-                    use_container_width=True,
-                )
+                r["is_forecast"] = False
+            st.session_state["result"] = result
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
 
-            # Multi-scenario comparison table if applicable
-            comp_res = res.get("comparison_result")
-            if comp_res:
-                st.markdown("### ⚖️ Multi-Scenario Comparison")
-                comp_df = create_comparison_dataframe(comp_res)
-                st.plotly_chart(plot_scenario_comparison(comp_df), use_container_width=True)
-                st.dataframe(comp_df, use_container_width=True)
+# Use cached result if no new run
+if result is None and st.session_state.get("result"):
+    result = st.session_state["result"]
 
-            # AI Explanation
-            st.markdown("### 🤖 Scenario Explanation")
-            st.info(res.get("explanation", ""))
 
-            # Technical Details Expander
-            with st.expander("🔍 View Technical Details & Formula Audit"):
-                st.markdown(
-                    """
-                    **Deterministic Formula Applied:**
-                    $$\\text{New Area} = \\text{Baseline Area} \\times \\left(1 + \\frac{\\Delta\\text{Area}\\%}{100}\\right)$$
-                    $$\\text{New Yield} = \\text{Baseline Yield} \\times \\left(1 + \\frac{\\Delta\\text{Yield}\\%}{100}\\right)$$
-                    $$\\text{New Production (1000 t)} = \\frac{\\text{New Area (1000 ha)} \\times \\text{New Yield (kg/ha)}}{1000}$$
-                    """
-                )
-                st.json(
-                    {
-                        "extracted_assumptions": res.get("extracted_assumptions"),
-                        "baseline_record": primary.get("baseline"),
-                        "simulation_record": primary,
-                        "validation_record": res.get("validation_results"),
-                    }
-                )
+# ── Display results ────────────────────────────────────────────────────────────
+def _fmt(val, unit="", decimals=2):
+    if val is None:
+        return "N/A"
+    return f"{val:,.{decimals}f} {unit}".strip()
+
+
+if result:
+    intent = result.get("intent", "")
+    status = result.get("status", "")
+
+    # ── Disclaimer ─────────────────────────────────────────────────────────────
+    if intent in ("scenario_simulation", "comparison"):
+        st.markdown(
+            '<div class="disclaimer-banner">⚠️ <strong>Important:</strong> This is a mathematical '
+            "what-if calculation based on your assumptions and available historical data. "
+            "It is <strong>not a guarantee of future harvest or income</strong>. "
+            "Real outcomes depend on weather, soil conditions, government policies, and many other factors.</div>",
+            unsafe_allow_html=True,
+        )
+
+    # ── Clarification needed ───────────────────────────────────────────────────
+    if result.get("needs_clarification") or status == "clarification_needed":
+        st.info(f"💬 {result.get('clarification_question', 'Please provide more details.')}")
+        st.stop()
+
+    # ── Historical analysis results ────────────────────────────────────────────
+    if intent == "historical_analysis":
+        st.subheader("📊 Historical Data Analysis")
+        hist_data = result.get("historical_data") or (result.get("baseline_results") or [{}])[0]
+        if not hist_data or not hist_data.get("found"):
+            st.warning("No historical data found for your query. Try a different state, crop, or year range.")
         else:
-            st.error("Scenario simulation could not produce valid results. Check state/crop/year spelling.")
+            st.metric("Records Found", hist_data.get("record_count", 0))
+            year_wise = hist_data.get("year_wise", [])
+            if year_wise:
+                trend_df = pd.DataFrame(year_wise)
+                st.markdown("#### Year-wise Production Trend")
+                fig = plot_historical_trend(trend_df)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(trend_df.style.format(precision=2), use_container_width=True)
+
+        st.subheader("🤖 AI Explanation")
+        st.write(result.get("explanation", "No explanation generated."))
+
+    # ── Scenario / comparison results ──────────────────────────────────────────
+    elif intent in ("scenario_simulation", "comparison"):
+        sim_results = result.get("simulation_results", [])
+        assumptions = result.get("extracted_assumptions", [])
+
+        for i, (sim, assump) in enumerate(zip(sim_results, assumptions + [{}] * max(0, len(sim_results) - len(assumptions)))):
+            if not sim.get("success"):
+                errs = "; ".join(sim.get("validation_errors", ["Unknown error"]))
+                st.error(f"❌ Scenario '{sim.get('scenario_name', i+1)}' failed: {errs}")
+                continue
+
+            ref_year = sim.get("reference_year")
+            tgt_year = sim.get("target_year", ref_year)
+            note = sim.get("using_reference_year_note", "")
+
+            st.subheader(f"📋 {sim.get('scenario_name', f'Scenario {i+1}')}")
+            if note:
+                st.caption(f"ℹ️ {note}")
+
+            # Key metrics
+            c1, c2, c3, c4 = st.columns(4)
+            b_prod = sim.get("baseline_production")
+            n_prod = sim.get("new_production")
+            diff = sim.get("production_change")
+            pct = sim.get("production_change_percent")
+
+            with c1:
+                st.metric(
+                    f"📦 Baseline Production ({ref_year})",
+                    _fmt(b_prod, "k-tonnes"),
+                )
+            with c2:
+                st.metric(
+                    f"🌱 Scenario Production ({tgt_year})",
+                    _fmt(n_prod, "k-tonnes"),
+                    delta=f"{diff:+.2f} k-tonnes ({pct:+.1f}%)" if diff is not None and pct is not None else None,
+                )
+            with c3:
+                area_chg = sim.get("area_change_percent", 0.0)
+                st.metric(
+                    "🗺️ Area Change",
+                    f"{area_chg:+.1f}%",
+                    delta_color="normal",
+                )
+            with c4:
+                yield_chg = sim.get("yield_change_percent", 0.0)
+                st.metric(
+                    "🌿 Yield Change",
+                    f"{yield_chg:+.1f}%",
+                    delta_color="normal",
+                )
+
+            # What changed table
+            with st.expander("📐 Detailed Numbers", expanded=False):
+                detail = {
+                    "Parameter": ["Area (k-ha)", "Yield (kg/ha)", "Production (k-tonnes)"],
+                    f"Baseline ({ref_year})": [
+                        _fmt(sim.get("baseline_area")),
+                        _fmt(sim.get("baseline_yield")),
+                        _fmt(b_prod),
+                    ],
+                    f"Scenario ({tgt_year})": [
+                        _fmt(sim.get("new_area")),
+                        _fmt(sim.get("new_yield")),
+                        _fmt(n_prod),
+                    ],
+                    "Change": [
+                        f"{area_chg:+.1f}%",
+                        f"{yield_chg:+.1f}%",
+                        f"{pct:+.1f}%" if pct is not None else "N/A",
+                    ],
+                }
+                st.dataframe(pd.DataFrame(detail), use_container_width=True, hide_index=True)
+
+            # Charts
+            try:
+                fig_bvs = plot_baseline_vs_scenario(sim)
+                if fig_bvs:
+                    st.plotly_chart(fig_bvs, use_container_width=True)
+            except Exception:
+                pass
+
+            try:
+                fig_ay = plot_area_yield_comparison(sim)
+                if fig_ay:
+                    st.plotly_chart(fig_ay, use_container_width=True)
+            except Exception:
+                pass
+
+        # Comparison chart (if multiple scenarios)
+        if intent == "comparison" and result.get("comparison_result"):
+            st.subheader("🔀 Scenario Comparison")
+            cmp = result["comparison_result"]
+            cmp_scenarios = cmp.get("scenarios", [])
+            if cmp_scenarios:
+                try:
+                    cmp_df = create_comparison_dataframe(cmp_scenarios)
+                    fig_cmp = plot_scenario_comparison(cmp_df)
+                    if fig_cmp:
+                        st.plotly_chart(fig_cmp, use_container_width=True)
+                    st.dataframe(cmp_df.style.format(precision=2), use_container_width=True)
+                except Exception:
+                    pass
+
+        # AI explanation
+        explanation = result.get("explanation", "")
+        if explanation:
+            st.subheader("🤖 AI Explanation")
+            st.write(explanation)
+
+    # ── Error / fallback ───────────────────────────────────────────────────────
+    elif status in ("error", "failed", "invalid"):
+        st.error(f"❌ Could not process request. {result.get('error', '')}")
+        explanation = result.get("explanation", "")
+        if explanation:
+            st.write(explanation)
+
+    # ── Assumptions used ───────────────────────────────────────────────────────
+    assumptions = result.get("extracted_assumptions", [])
+    if assumptions and intent in ("scenario_simulation", "comparison"):
+        with st.expander("🔍 Assumptions extracted by AI", expanded=False):
+            for a in assumptions:
+                st.json(a)
+
+else:
+    # Landing state
+    st.info(
+        "👆 Enter your farming scenario above and click **Analyse My Scenario**, "
+        "or use the **Manual Scenario Mode** in the sidebar for a quick calculation."
+    )
+    st.markdown(
+        """
+        **What you can ask:**
+        - *What if rice area in Karnataka increases by 10% and yield decreases by 5% in 2030?*
+        - *If wheat in Punjab expands by 20%, what happens to production?*
+        - *Compare two scenarios: maize in Maharashtra with area +10% vs area -10%.*
+        - *Show historical sugarcane production trends in Maharashtra.*
+
+        **Available data:** Years 2010–2017 · 20 States · 29 Crops
+        """
+    )

@@ -24,6 +24,7 @@ ENV/
 # Environment variables / secrets
 .env
 .env.*
+!.env.example
 *.secret
 
 # Large data files (use Git LFS or document separately)

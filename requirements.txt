@@ -20,11 +20,11 @@ plotly>=5.18.0
 # Streamlit web dashboard
 streamlit>=1.30.0
 
-# GenAI & Agentic AI stack (Local Ollama integration)
+# GenAI & Agentic AI stack (Gemini API integration)
 langchain>=0.3.0
 langgraph>=0.2.0
-langchain-ollama>=0.2.0
-ollama>=0.4.0
+langchain-google-genai>=2.0.0
+google-genai>=1.0.0
 python-dotenv>=1.0.0
 pydantic>=2.7.0
 

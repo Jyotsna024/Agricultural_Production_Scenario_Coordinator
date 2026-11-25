@@ -79,14 +79,16 @@ matches the following schema exactly:
 
 RULES:
 - Never invent historical values or scenario results. Only use data provided to you.
+- INTENT CLASSIFICATION GUIDELINES:
+  * If the user mentions percentage changes, increases, decreases, or what-if changes (e.g. "increases by 10%", "decreases by 5%", "what happens if"), the intent is ALWAYS "scenario_simulation" (or "comparison" if multiple scenarios are compared). Do NOT classify as "historical_analysis" when hypothetical changes are proposed.
+  * Only classify as "historical_analysis" if the user is asking strictly about historical data or trends without proposing any hypothetical changes (e.g. "show historical trends", "what was the production in 2015?").
 - For scenario_simulation: populate the `scenarios` array with at least one entry.
+- SIGN CONVENTION: If area or yield INCREASES, the percentage must be POSITIVE (e.g., increases by 10% -> 10.0 or +10.0). If area or yield DECREASES, the percentage must be NEGATIVE (e.g., decreases by 5% -> -5.0). Do not reverse signs.
 - For comparison: populate `scenarios` with two or more entries.
 - For historical_analysis: set `historical_query` to a clean search string; `scenarios` may be empty.
 - If a required field (state, crop, year for simulations) is missing, set needs_clarification=true
   and list the missing fields in `missing_fields`.
 - Return ONLY the JSON object – no markdown fences, no extra text.
-- area_change_percent and yield_change_percent should be signed percentages
-  (e.g. -10.0 for a 10% decrease, +20.0 for a 20% increase).
 """
 
 # ---------------------------------------------------------------------------
