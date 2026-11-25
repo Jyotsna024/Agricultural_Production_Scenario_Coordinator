@@ -1,34 +1,38 @@
 # ============================================================
 # PS 137 – Agricultural Production Scenario Coordinator
-# requirements.txt  –  Member 1 dependencies
+# Complete Project Dependencies (Members 1, 2, 3, 4)
 # ============================================================
 
-# Core data processing
+# Core data processing & numerical compute
 pandas>=2.1.0
 numpy>=1.26.0
 
-# Hugging Face dataset loader
+# Hugging Face dataset loader & parquet support
 datasets>=2.18.0
-
-# Parquet / Arrow support
 pyarrow>=14.0.0
 fastparquet>=2023.10.0
 
 # Visualisation
 matplotlib>=3.8.0
 seaborn>=0.13.0
+plotly>=5.18.0
 
-# Jupyter notebook
-jupyter>=1.0.0
-nbformat>=5.9.0
-ipykernel>=6.26.0
+# Streamlit web dashboard
+streamlit>=1.30.0
+
+# GenAI & Agentic AI stack (Local Ollama integration)
+langchain>=0.3.0
+langgraph>=0.2.0
+langchain-ollama>=0.2.0
+ollama>=0.4.0
+python-dotenv>=1.0.0
+pydantic>=2.7.0
 
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
 
-# Streamlit (Member 4 – placeholder, install when needed)
-streamlit>=1.30.0
-
-# Utilities
-pathlib2>=2.3.7; python_version < "3.4"
+# Optional Jupyter notebooks
+jupyter>=1.0.0
+nbformat>=5.9.0
+ipykernel>=6.26.0

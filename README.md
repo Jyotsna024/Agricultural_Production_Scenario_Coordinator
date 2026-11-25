@@ -1,161 +1,104 @@
-# PS 137 – Agricultural Production Scenario Coordinator
+# Agricultural Production Scenario Coordinator (PS 137)
 
-## Project Description
+A GenAI-powered scenario exploration platform for Indian agriculture that translates natural-language assumptions into deterministic what-if crop production analyses grounded in official historical records (2010–2017).
 
-This project develops a **GenAI-powered Agricultural Production Scenario Coordinator** for India. The system processes historical crop production records and allows users to test hypothetical assumptions (e.g., "What if rainfall increases by 10%?") and then compares multiple scenarios with verified calculations.
-
-> **Important:** This system produces *scenario comparisons*, not forecasts. It clearly distinguishes between what has been observed historically and what is being simulated.
-
-**SDGs addressed:** SDG 1 (No Poverty), SDG 2 (Zero Hunger), SDG 15 (Life on Land)
+> ⚠️ **Important:** This system is an **agricultural scenario simulation tool**, **NOT a forecasting or prediction model**. All computed outputs represent arithmetic what-if simulations based on historical baselines and user assumptions.
 
 ---
 
-## Folder Structure
+## 🌟 Key Features
 
-```
-PS137_Agricultural_Scenario_Coordinator/
-│
-├── README.md                        ← This file
-├── requirements.txt                 ← Python dependencies
-├── .gitignore                       ← Files excluded from Git
-├── main.py                          ← Run the full Member 1 pipeline
-│
-├── data/
-│   ├── raw/                         ← Original downloaded data (never modified)
-│   │   ├── crop_statistics.parquet  ← Raw Hugging Face dataset
-│   │   └── sources.json             ← Collection metadata
-│   ├── interim/                     ← Intermediate files (if any)
-│   └── processed/
-│       └── cleaned_agriculture_dataset.csv  ← Final cleaned dataset
-│
-├── docs/                            ← Project and dataset documentation
-├── reports/                         ← Audit and validation reports
-├── notebooks/                       ← Jupyter EDA notebooks
-│
-├── src/
-│   ├── data_collection/             ← Member 1: data download
-│   ├── preprocessing/               ← Member 1: data cleaning
-│   ├── analysis/                    ← Member 2: trend analysis (placeholder)
-│   ├── simulation/                  ← Member 3: scenario simulation (placeholder)
-│   ├── agents/                      ← Member 4: AI agents (placeholder)
-│   ├── validation/                  ← Member 4: output validation (placeholder)
-│   └── visualization/               ← Shared charts (placeholder)
-│
-├── app/
-│   └── app.py                       ← Streamlit web application (Member 4)
-│
-└── tests/
-    └── test_preprocessing.py        ← Automated tests (Member 1)
-```
+- **100% Local LLM with Ollama:** Runs entirely offline using your locally installed Ollama instance (default: `llama3.2`). **Zero Gemini API keys or cloud billing required.**
+- **Deterministic Python Calculation Engine:** Pure arithmetic simulations ensuring the LLM never fabricates baseline data or performs error-prone calculations:
+  $$\text{New Production (1000 t)} = \frac{\text{New Area (1000 ha)} \times \text{New Yield (kg/ha)}}{1000}$$
+- **State-of-the-Art LangGraph Orchestration:**
+  1. Understands natural language requests.
+  2. Extracts structured parameters (`state`, `district`, `crop`, `year`, `area_change_%`, `yield_change_%`).
+  3. Validates required fields and asks intelligent clarification questions if details are missing.
+  4. Retrieves verified historical baselines from Member 1 & 2's cleaned dataset.
+  5. Runs Member 3's scenario engine and multi-scenario comparator.
+  6. Enforces output validation (no NaN/infinite numbers, `is_forecast: false`).
+  7. Generates clear, non-technical explanations using Ollama.
+- **Clean Single-Page Streamlit Dashboard:** User-friendly natural language prompt interface with clickable example prompts, metric cards, Plotly charts, and manual calculation overrides.
 
 ---
 
-## Windows Setup Instructions
+## 🛠️ Prerequisites & Setup
 
-### Step 1 – Check Python version
-Open **Command Prompt** or **PowerShell** and type:
-```
-python --version
-```
-You need Python 3.9 or later. Download from https://python.org if needed.
+### 1. Verify Local Ollama Installation
 
-### Step 2 – Open the project folder
-```
-cd C:\Users\devik\Desktop\E9\PS137_Agricultural_Scenario_Coordinator
+Ollama must be installed and running on your laptop:
+
+```bash
+# Check Ollama version
+ollama --version
+
+# View installed models
+ollama list
 ```
 
-### Step 3 – Create a virtual environment (recommended)
-```
-python -m venv .venv
-.venv\Scripts\activate
-```
-Your prompt will change to `(.venv)` when activated.
+If Ollama is not already running as a background service, start it in a separate terminal:
 
-### Step 4 – Install dependencies
+```bash
+ollama serve
 ```
+
+If you don't have a model installed, pull the recommended lightweight model:
+
+```bash
+ollama pull llama3.2
+```
+
+### 2. Configure Environment
+
+Copy `.env.example` to `.env` (optional, default values work out-of-the-box):
+
+```bash
+cp .env.example .env
+```
+
+Default configuration in `.env.example`:
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TEMPERATURE=0.0
+```
+
+### 3. Install Python Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## Running the Pipeline
+## 🚀 Running the Application
 
-### Collect the dataset (download from Hugging Face)
-```
-python main.py --collect-only
-```
-Or run the script directly:
-```
-python src/data_collection/collect_dataset.py
-```
+### Launch Streamlit Dashboard
 
-### Run preprocessing (clean and prepare the dataset)
-```
-python main.py --preprocess-only
-```
-Or run the script directly:
-```
-python src/preprocessing/preprocess_agriculture.py
-```
-
-### Run the full pipeline (collect + preprocess + validate)
-```
-python main.py
-```
-
-### Run a quick validation of the cleaned dataset
-```
-python main.py --validate-only
-```
-
----
-
-## Running Tests
-```
-pytest tests/ -v
-```
-
----
-
-## Running the Streamlit App (Member 4)
-```
+```bash
 streamlit run app/app.py
 ```
 
----
+Open your browser to `http://localhost:8501`.
 
-## Dataset
+### Try an Example Prompt
 
-| Property | Value |
-|----------|-------|
-| Source | Hugging Face – `therajasekhar/india-public-agriculture` |
-| URL | https://huggingface.co/datasets/therajasekhar/india-public-agriculture |
-| Format | Parquet (raw), CSV (processed) |
-| Expected rows | ~72,036 |
-| Geographic scope | India (~20 states, ~311 districts) |
-| Year range | 2010 – 2017 |
-| Key columns | state, district, year, crop, area_1000_ha, production_1000_t, yield_kg_per_ha |
+Paste into the dashboard prompt box:
+- *"What happens if rice cultivation area in Karnataka increases by 10% and yield decreases by 5% in 2017?"*
+- *"Suppose maize area in Karnataka increases by 15% in 2015 while yield remains unchanged. Calculate the new production."*
+- *"Compare two scenarios for wheat in Madhya Pradesh in 2016: Scenario A with yield drop of 12%, and Scenario B with area growth of 8%."*
+- *"Show me the historical production trend of rice in Karnataka from 2010 to 2017."*
 
 ---
 
-## Output Files
+## 🧪 Running Automated Tests
 
-| File | Description |
-|------|-------------|
-| `data/raw/crop_statistics.parquet` | Original unmodified dataset |
-| `data/raw/sources.json` | Collection metadata |
-| `data/processed/cleaned_agriculture_dataset.csv` | Final cleaned dataset for all members |
-| `reports/data_quality_audit.txt` | Data quality findings |
-| `reports/cleaning_summary_report.txt` | What was cleaned and why |
-| `reports/final_validation_report.txt` | Validation results |
+All tests run deterministically with mocked LLMs, so the full test suite runs without requiring an active Ollama connection:
 
----
+```bash
+pytest tests/ -v
+```
 
-## Team Responsibilities
-
-| Member | Module | Status |
-|--------|--------|--------|
-| Member 1 | Dataset collection, EDA, preprocessing | ✅ In progress |
-| Member 2 | Historical analysis and trend identification | ⏳ Placeholder |
-| Member 3 | Scenario simulation and production calculations | ⏳ Placeholder |
-| Member 4 | Agentic AI, validation, Streamlit application | ⏳ Placeholder |
+Current test coverage: **91/91 tests passing** across data collection, preprocessing, historical analysis, scenario simulation, validator, and LangGraph workflow.
